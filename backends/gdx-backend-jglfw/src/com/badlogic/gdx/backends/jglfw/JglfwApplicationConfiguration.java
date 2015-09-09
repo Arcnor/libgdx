@@ -16,14 +16,8 @@
 
 package com.badlogic.gdx.backends.jglfw;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Graphics.DisplayMode;
-import com.badlogic.gdx.backends.jglfw.JglfwGraphics.JglfwDisplayMode;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.utils.Array;
-
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
 
 /** @author Nathan Sweet */
 public class JglfwApplicationConfiguration {
@@ -57,8 +51,6 @@ public class JglfwApplicationConfiguration {
 	public boolean forceExit = true;
 	/** True to have a title and border around the window. **/
 	public boolean undecorated;
-	/** Causes the main loop to run on the EDT instead of a new thread, for easier interoperability with AWT/Swing. Broken on Linux. **/
-	public boolean runOnEDT;
 	/** The color to clear the window immediately after creation. **/
 	public Color initialBackgroundColor = Color.BLACK;
 	/** True to hide the window when it is created. The window must be shown with {@link JglfwGraphics#show()}. **/
@@ -71,25 +63,16 @@ public class JglfwApplicationConfiguration {
 	public int hiddenFPS = -1;
 	/** Prefrences location on desktop. Default: current directory + ".prefs" */
 	public String preferencesLocation = ".prefs/";
+	/** whether to attempt use OpenGL ES 3.0. **/
+	public boolean useGL30 = false;
 
 	static public DisplayMode[] getDisplayModes () {
-		GraphicsDevice device = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice();
-		java.awt.DisplayMode desktopMode = device.getDisplayMode();
-		java.awt.DisplayMode[] displayModes = device.getDisplayModes();
-		Array<DisplayMode> modes = new Array();
-		outer:
-		for (java.awt.DisplayMode mode : displayModes) {
-			for (DisplayMode other : modes)
-				if (other.width == mode.getWidth() && other.height == mode.getHeight() && other.bitsPerPixel == mode.getBitDepth())
-					continue outer; // Duplicate.
-			if (mode.getBitDepth() != desktopMode.getBitDepth()) continue;
-			modes.add(new JglfwDisplayMode(mode.getWidth(), mode.getHeight(), mode.getRefreshRate(), mode.getBitDepth()));
-		}
-		return modes.toArray(DisplayMode.class);
+		// FIXME
+		return null;
 	}
 
 	static public DisplayMode getDesktopDisplayMode () {
-		java.awt.DisplayMode mode = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDisplayMode();
-		return new JglfwDisplayMode(mode.getWidth(), mode.getHeight(), mode.getRefreshRate(), mode.getBitDepth());
+		// FIXME
+		return null;
 	}
 }

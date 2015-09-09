@@ -20,15 +20,19 @@
 		</dependency>
 
 		<dependency>
-			<groupId>com.badlogicgames.jglfw</groupId>
-			<artifactId>jglfw</artifactId>
-			<version>${jglfw.version}</version>
+			<groupId>org.lwjgl.lwjgl3</groupId>
+			<artifactId>lwjgl3-core</artifactId>
+			<version>3.0.0</version>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/libs/lwjgl.jar</systemPath>
 		</dependency>
 		<dependency>
-			<groupId>com.badlogicgames.jglfw</groupId>
-			<artifactId>jglfw-platform</artifactId>
-			<version>${jglfw.version}</version>
+			<groupId>org.lwjgl.lwjgl3</groupId>
+			<artifactId>lwjgl3-platform</artifactId>
+			<version>3.0.0</version>
+			<scope>system</scope>
 			<classifier>natives-desktop</classifier>
+			<systemPath>${project.basedir}/libs/gdx-backend-lwjgl3-natives.jar</systemPath>
 		</dependency>
 	</dependencies>
 

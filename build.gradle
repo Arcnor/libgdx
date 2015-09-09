@@ -72,8 +72,8 @@ project(":backends:gdx-backend-headless") {
 project(":backends:gdx-backend-jglfw") {
     dependencies {
         compile project(":gdx")
-        compile "com.badlogicgames.jglfw:jglfw:$jglfwVersion"
-        compile "com.badlogicgames.jglfw:jglfw-platform:$jglfwVersion:natives-desktop"
+        compile files("libs/gdx-backend-lwjgl3-natives.jar")
+        compile files("libs/lwjgl.jar")
     }
 }
 

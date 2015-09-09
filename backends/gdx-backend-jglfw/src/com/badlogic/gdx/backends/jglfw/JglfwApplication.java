@@ -17,7 +17,6 @@
 package com.badlogic.gdx.backends.jglfw;
 
 import static com.badlogic.gdx.utils.SharedLibraryLoader.*;
-import static com.badlogic.jglfw.Glfw.*;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.ApplicationListener;
@@ -29,12 +28,20 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
 import com.badlogic.gdx.utils.GdxNativesLoader;
 import com.badlogic.gdx.utils.GdxRuntimeException;
-import com.badlogic.jglfw.GlfwCallbackAdapter;
-import com.badlogic.jglfw.GlfwCallbacks;
+import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.glfw.GLFWWindowCloseCallback;
+import org.lwjgl.glfw.GLFWWindowFocusCallback;
+import org.lwjgl.glfw.GLFWWindowIconifyCallback;
+import org.lwjgl.glfw.GLFWWindowPosCallback;
+import org.lwjgl.glfw.GLFWWindowRefreshCallback;
+import org.lwjgl.glfw.GLFWWindowSizeCallback;
 
-import java.awt.EventQueue;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.lwjgl.glfw.Callbacks.*;
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
 
 /** An OpenGL surface fullscreen or in a lightweight window using GLFW.
  * @author mzechner
@@ -49,15 +56,23 @@ public class JglfwApplication implements Application {
 	private final Array<Runnable> executedRunnables = new Array();
 	private final Array<LifecycleListener> lifecycleListeners = new Array();
 	private final Map<String, Preferences> preferences = new HashMap();
-	private final JglfwClipboard clipboard = new JglfwClipboard();
-	private final GlfwCallbacks callbacks = new GlfwCallbacks();
+	private final JglfwClipboard clipboard = new JglfwClipboard(this);
 	private int logLevel = LOG_INFO;
 	volatile boolean running = true;
 	boolean isPaused;
 	protected String preferencesdir;
 
-	private boolean forceExit, runOnEDT;
+	private boolean forceExit;
 	private int foregroundFPS, backgroundFPS, hiddenFPS;
+
+	// Callbacks need to be fields to avoid GC, so don't inline them!
+	private GLFWWindowSizeCallback windowSizeCallback;
+	private GLFWWindowPosCallback windowPosCallback;
+	private GLFWWindowRefreshCallback windowRefreshCallback;
+	private GLFWWindowFocusCallback windowFocusCallback;
+	private GLFWWindowIconifyCallback windowIconifyCallback;
+	private GLFWWindowCloseCallback windowCloseCallback;
+	private GLFWErrorCallback errorCallback;
 
 	public JglfwApplication (ApplicationListener listener) {
 		this(listener, listener.getClass().getSimpleName(), 640, 480);
@@ -90,8 +105,8 @@ public class JglfwApplication implements Application {
 				}
 			}
 		};
-		if (config.runOnEDT)
-			EventQueue.invokeLater(runnable);
+		if (isMac)
+			runnable.run();
 		else
 			new Thread(runnable, "MainLoop").start();
 	}
@@ -105,7 +120,6 @@ public class JglfwApplication implements Application {
 
 	void initialize (JglfwApplicationConfiguration config) {
 		forceExit = config.forceExit;
-		runOnEDT = config.runOnEDT;
 		foregroundFPS = config.foregroundFPS;
 		backgroundFPS = config.backgroundFPS;
 		hiddenFPS = config.hiddenFPS;
@@ -115,19 +129,17 @@ public class JglfwApplication implements Application {
 
 		GdxNativesLoader.load();
 
-		boolean inputCallbacksOnAppKitThread = isMac;
-		if (inputCallbacksOnAppKitThread) java.awt.Toolkit.getDefaultToolkit(); // Ensure AWT is initialized before GLFW.
-
-		if (!glfwInit()) throw new GdxRuntimeException("Unable to initialize GLFW.");
+		if (glfwInit() != GL_TRUE) throw new GdxRuntimeException("Unable to initialize GLFW.");
 
 		Gdx.app = this;
 		Gdx.graphics = graphics = new JglfwGraphics(config);
 		Gdx.files = files = new JglfwFiles();
-		Gdx.input = input = new JglfwInput(this, inputCallbacksOnAppKitThread);
+		Gdx.input = input = new JglfwInput(this);
 		Gdx.net = net = new JglfwNet();
 
-		callbacks.add(new GlfwCallbackAdapter() {
-			public void windowSize (long window, final int width, final int height) {
+		glfwSetWindowSizeCallback(graphics.window, windowSizeCallback = new GLFWWindowSizeCallback() {
+			@Override
+			public void invoke(long window, final int width, final int height) {
 				Runnable runnable = new Runnable() {
 					public void run () {
 						graphics.sizeChanged(width, height);
@@ -138,8 +150,10 @@ public class JglfwApplication implements Application {
 				else
 					runnable.run();
 			}
-
-			public void windowPos (long window, final int x, final int y) {
+		});
+		glfwSetWindowPosCallback(graphics.window, windowPosCallback = new GLFWWindowPosCallback() {
+			@Override
+			public void invoke(long window, final int x, final int y) {
 				Runnable runnable = new Runnable() {
 					public void run () {
 						graphics.positionChanged(x, y);
@@ -150,30 +164,40 @@ public class JglfwApplication implements Application {
 				else
 					runnable.run();
 			}
-
-			public void windowRefresh (long window) {
+		});
+		glfwSetWindowRefreshCallback(graphics.window, windowRefreshCallback = new GLFWWindowRefreshCallback() {
+			@Override
+			public void invoke(long window) {
 				if (Thread.currentThread() == glThread) render(System.nanoTime());
 			}
-
-			public void windowFocus (long window, boolean focused) {
-				graphics.foreground = focused;
+		});
+		glfwSetWindowFocusCallback(graphics.window, windowFocusCallback = new GLFWWindowFocusCallback() {
+			@Override
+			public void invoke(long window, int focused) {
+				graphics.foreground = focused == GL_TRUE;
 				graphics.requestRendering();
 			}
-
-			public void windowIconify (long window, boolean iconified) {
-				graphics.minimized = iconified;
-			}
-
-			public boolean windowClose (long window) {
-				if (shouldExit()) exit();
-				return false;
-			}
-
-			public void error (int error, String description) {
-				throw new GdxRuntimeException("GLFW error " + error + ": " + description);
+		});
+		glfwSetWindowIconifyCallback(graphics.window, windowIconifyCallback = new GLFWWindowIconifyCallback() {
+			@Override
+			public void invoke(long window, int iconified) {
+				graphics.minimized = iconified == GL_TRUE;
 			}
 		});
-		glfwSetCallback(callbacks);
+		glfwSetWindowCloseCallback(graphics.window, windowCloseCallback = new GLFWWindowCloseCallback() {
+			@Override
+			public void invoke(long window) {
+				if (shouldExit()) exit();
+				glfwSetWindowShouldClose(window, GL_FALSE);
+			}
+		});
+		glfwSetErrorCallback(errorCallback = new GLFWErrorCallback() {
+			@Override
+			public void invoke(int error, long description) {
+				errorCallbackPrint().invoke(error, description);
+				throw new GdxRuntimeException("GLFW error " + error);
+			}
+		});
 
 		start();
 	}
@@ -183,21 +207,9 @@ public class JglfwApplication implements Application {
 		listener.create();
 		listener.resize(graphics.getWidth(), graphics.getHeight());
 
-		if (runOnEDT) {
-			new Runnable() {
-				public void run () {
-					frame();
-					if (running)
-						EventQueue.invokeLater(this);
-					else
-						end();
-				}
-			}.run();
-		} else {
-			while (running)
-				frame();
-			end();
-		}
+		while (running)
+			frame();
+		end();
 	}
 
 	/** Handles posted runnables, input, and rendering for each frame. */
@@ -273,6 +285,7 @@ public class JglfwApplication implements Application {
 		}
 		listener.pause();
 		listener.dispose();
+		releaseAllCallbacks(graphics.window);
 		glfwTerminate();
 		if (forceExit) System.exit(-1);
 	}
@@ -420,9 +433,5 @@ public class JglfwApplication implements Application {
 		synchronized (lifecycleListeners) {
 			lifecycleListeners.removeValue(listener, true);
 		}
-	}
-
-	public GlfwCallbacks getCallbacks () {
-		return callbacks;
 	}
 }

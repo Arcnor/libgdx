@@ -1,12 +1,12 @@
 /*******************************************************************************
  * Copyright 2011 See AUTHORS file.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *   http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,8 +15,6 @@
  ******************************************************************************/
 
 package com.badlogic.gdx.backends.jglfw;
-
-import static com.badlogic.jglfw.Glfw.*;
 
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
@@ -28,10 +26,17 @@ import com.badlogic.gdx.graphics.GL30;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.GdxRuntimeException;
-import com.badlogic.jglfw.GlfwVideoMode;
-import com.badlogic.jglfw.gl.GL;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.PointerBuffer;
+import org.lwjgl.glfw.GLFWvidmode;
+import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GLContext;
 
-import java.awt.Toolkit;
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
+
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
 
 /** An implementation of the {@link Graphics} interface based on GLFW.
  * @author Nathan Sweet */
@@ -54,13 +59,18 @@ public class JglfwGraphics implements Graphics {
 	private Color initialBackgroundColor;
 	private volatile boolean isContinuous = true, renderRequested;
 	volatile boolean foreground, minimized;
+	private IntBuffer intBuffer = BufferUtils.createIntBuffer(1);
+	private IntBuffer intBuffer2 = BufferUtils.createIntBuffer(1);
 
 	private long frameId = -1;
 	private float deltaTime;
 	private long frameStart, lastTime = -1;
 	private int frames, fps;
 
+	boolean usingGL30;
+
 	private JglfwGL20 gl20;
+	private JglfwGL30 gl30;
 
 	public JglfwGraphics (JglfwApplicationConfiguration config) {
 		// Store values from config.
@@ -71,20 +81,27 @@ public class JglfwGraphics implements Graphics {
 		x = config.x;
 		y = config.y;
 		vSync = config.vSync;
+
+		// FIXME: This needs smarts
+		usingGL30 = config.useGL30;
+
 		initialBackgroundColor = config.initialBackgroundColor;
 		if (config.fullscreenMonitorIndex != -1) { // Use monitor specified in config if it is valid.
-			long[] monitors = glfwGetMonitors();
-			if (config.fullscreenMonitorIndex < monitors.length) fullscreenMonitor = monitors[config.fullscreenMonitorIndex];
+			PointerBuffer monitors = glfwGetMonitors();
+			long count = monitors.get();
+			if (config.fullscreenMonitorIndex < count) fullscreenMonitor = monitors.get(config.fullscreenMonitorIndex + 1);
 		}
 
 		// Create window.
 		if (!createWindow(config.width, config.height, config.fullscreen)) {
 			throw new GdxRuntimeException("Unable to create window: " + config.width + "x" + config.height + ", fullscreen: "
-				+ config.fullscreen);
+					+ config.fullscreen);
 		}
 
+		GLContext.createFromCurrent();
+
 		// Create GL.
-		String version = GL.glGetString(GL20.GL_VERSION);
+		String version = GL11.glGetString(GL20.GL_VERSION);
 		glMajorVersion = Integer.parseInt("" + version.charAt(0));
 		glMinorVersion = Integer.parseInt("" + version.charAt(2));
 
@@ -93,13 +110,20 @@ public class JglfwGraphics implements Graphics {
 		if (glMajorVersion == 2 || version.contains("2.1")) {
 			if (!supportsExtension("GL_EXT_framebuffer_object") && !supportsExtension("GL_ARB_framebuffer_object")) {
 				throw new GdxRuntimeException("OpenGL 2.0 or higher with the FBO extension is required. OpenGL version: " + version
-					+ ", FBO extension: false");
+						+ ", FBO extension: false");
 			}
 		}
 
-		gl20 = new JglfwGL20();
+		if (usingGL30) {
+			gl30 = new JglfwGL30();
+			gl20 = gl30;
+		} else {
+			gl20 = new JglfwGL20();
+		}
+
 		Gdx.gl = gl20;
 		Gdx.gl20 = gl20;
+		Gdx.gl30 = gl30;
 
 		if (!config.hidden) show();
 	}
@@ -109,7 +133,7 @@ public class JglfwGraphics implements Graphics {
 
 		glfwWindowHint(GLFW_VISIBLE, 0);
 		glfwWindowHint(GLFW_RESIZABLE, resizable ? 1 : 0);
-		glfwWindowHint(GLFW_UNDECORATED, undecorated ? 1 : 0);
+		glfwWindowHint(GLFW_DECORATED, undecorated ? 0 : 1);
 		glfwWindowHint(GLFW_RED_BITS, bufferFormat.r);
 		glfwWindowHint(GLFW_GREEN_BITS, bufferFormat.g);
 		glfwWindowHint(GLFW_BLUE_BITS, bufferFormat.b);
@@ -118,7 +142,7 @@ public class JglfwGraphics implements Graphics {
 		glfwWindowHint(GLFW_STENCIL_BITS, bufferFormat.stencil);
 		glfwWindowHint(GLFW_SAMPLES, bufferFormat.samples);
 
-		boolean mouseCaptured = window != 0 && glfwGetInputMode(window, GLFW_CURSOR_MODE) == GLFW_CURSOR_CAPTURED;
+		boolean mouseCaptured = window != 0 && glfwGetInputMode(window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
 
 		long oldWindow = window;
 		long newWindow = glfwCreateWindow(width, height, title, fullscreen ? fullscreenMonitor : 0, oldWindow);
@@ -138,7 +162,7 @@ public class JglfwGraphics implements Graphics {
 			glfwSetWindowPos(window, x, y);
 		}
 
-		if (!mouseCaptured) glfwSetInputMode(window, GLFW_CURSOR_MODE, GLFW_CURSOR_NORMAL); // Prevent fullscreen from taking mouse.
+		if (!mouseCaptured) glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); // Prevent fullscreen from taking mouse.
 
 		glfwMakeContextCurrent(newWindow);
 		setVSync(vSync);
@@ -217,36 +241,56 @@ public class JglfwGraphics implements Graphics {
 	}
 
 	public float getPpiX () {
-		// return getWidth() / (glfwGetMonitorPhysicalWidth(getWindowMonitor()) * 0.03937f); // mm to inches
-		return Toolkit.getDefaultToolkit().getScreenResolution();
+		intBuffer.clear();
+
+		glfwGetMonitorPhysicalSize(getWindowMonitor(), intBuffer, null);
+		final ByteBuffer vidMode = glfwGetVideoMode(getWindowMonitor());
+		int pW = intBuffer.get();
+		return GLFWvidmode.width(vidMode) / (pW * 0.03937f);
 	}
 
 	public float getPpiY () {
-		// return getHeight() / (glfwGetMonitorPhysicalHeight(getWindowMonitor()) * 0.03937f); // mm to inches
-		return Toolkit.getDefaultToolkit().getScreenResolution();
+		intBuffer.clear();
+
+		glfwGetMonitorPhysicalSize(getWindowMonitor(), null, intBuffer);
+		final ByteBuffer vidMode = glfwGetVideoMode(getWindowMonitor());
+		int pH = intBuffer.get();
+		return GLFWvidmode.height(vidMode) / (pH * 0.03937f);
 	}
 
 	public float getPpcX () {
-		// return getWidth() / (glfwGetMonitorPhysicalWidth(getWindowMonitor()) / 10); // mm to cm
-		return Toolkit.getDefaultToolkit().getScreenResolution() / 2.54f;
+		intBuffer.clear();
+
+		glfwGetMonitorPhysicalSize(getWindowMonitor(), intBuffer, null);
+		final ByteBuffer vidMode = glfwGetVideoMode(getWindowMonitor());
+		int pW = intBuffer.get();
+		return GLFWvidmode.width(vidMode) / (pW / 10);
 	}
 
 	public float getPpcY () {
-		// return getHeight() / (glfwGetMonitorPhysicalHeight(getWindowMonitor()) / 10); // mm to cm
-		return Toolkit.getDefaultToolkit().getScreenResolution() / 2.54f;
+		intBuffer.clear();
+
+		glfwGetMonitorPhysicalSize(getWindowMonitor(), null, intBuffer);
+		final ByteBuffer vidMode = glfwGetVideoMode(getWindowMonitor());
+		int pH = intBuffer.get();
+		return GLFWvidmode.height(vidMode) / (pH / 10);
 	}
 
 	public float getDensity () {
-		// long monitor = getWindowMonitor();
-		// float mmWidth = glfwGetMonitorPhysicalWidth(monitor);
-		// float mmHeight = glfwGetMonitorPhysicalHeight(monitor);
-		// float inches = (float)Math.sqrt(mmWidth * mmWidth + mmHeight * mmHeight) * 0.03937f; // mm to inches
-		// float pixelWidth = getWidth();
-		// float pixelHeight = getHeight();
-		// float pixels = (float)Math.sqrt(pixelWidth * pixelWidth + pixelHeight * pixelHeight);
-		// float diagonalPpi = pixels / inches;
-		// return diagonalPpi / 160f;
-		return Toolkit.getDefaultToolkit().getScreenResolution() / 160f;
+		intBuffer.clear();
+		intBuffer2.clear();
+
+		glfwGetMonitorPhysicalSize(getWindowMonitor(), intBuffer, intBuffer2);
+		float mmWidth = intBuffer.get();
+		float mmHeight = intBuffer2.get();
+		float inches = (float) Math.sqrt(mmWidth * mmWidth + mmHeight * mmHeight) * 0.03937f; // mm to inches
+		final ByteBuffer vidMode = glfwGetVideoMode(getWindowMonitor());
+		float pixelWidth = GLFWvidmode.width(vidMode);
+		float pixelHeight = GLFWvidmode.height(vidMode);
+		float pixels = (float) Math.sqrt(pixelWidth * pixelWidth + pixelHeight * pixelHeight);
+		float diagonalPpi = pixels / inches;
+
+		return diagonalPpi / 160f;
 	}
 
 	public boolean supportsDisplayModeChange () {
@@ -262,23 +306,34 @@ public class JglfwGraphics implements Graphics {
 	}
 
 	public DisplayMode[] getDisplayModes () {
-		Array<DisplayMode> modes = new Array();
-		for (GlfwVideoMode mode : glfwGetVideoModes(getWindowMonitor()))
-			modes.add(new JglfwDisplayMode(mode.width, mode.height, 0, mode.redBits + mode.greenBits + mode.blueBits));
+		Array<DisplayMode> modes = new Array<DisplayMode>();
+		IntBuffer count = BufferUtils.createIntBuffer(1);
+		ByteBuffer vidModes = glfwGetVideoModes(getWindowMonitor(), count);
+		int vidModeCount = count.get();
+		for (int j = 0; j < vidModeCount; j++) {
+
+			modes.add(new JglfwDisplayMode(
+					GLFWvidmode.width(vidModes),
+					GLFWvidmode.height(vidModes),
+					GLFWvidmode.refreshRate(vidModes),
+					GLFWvidmode.redBits(vidModes) + GLFWvidmode.greenBits(vidModes) + GLFWvidmode.blueBits(vidModes)
+			));
+			vidModes.position(GLFWvidmode.SIZEOF * (j + 1));
+		}
 		return modes.toArray(DisplayMode.class);
 	}
 
 	public DisplayMode getDesktopDisplayMode () {
-		GlfwVideoMode mode = glfwGetVideoMode(getWindowMonitor());
-		return new JglfwDisplayMode(mode.width, mode.height, 0, mode.redBits + mode.greenBits + mode.blueBits);
+		ByteBuffer mode = glfwGetVideoMode(getWindowMonitor());
+		return new JglfwDisplayMode(GLFWvidmode.width(mode), GLFWvidmode.height(mode), GLFWvidmode.refreshRate(mode), GLFWvidmode.redBits(mode) + GLFWvidmode.greenBits(mode) + GLFWvidmode.blueBits(mode));
 	}
 
 	public boolean setDisplayMode (DisplayMode displayMode) {
 		bufferFormat = new BufferFormat( //
-			displayMode.bitsPerPixel == 16 ? 5 : 8, //
-			displayMode.bitsPerPixel == 16 ? 6 : 8, //
-			displayMode.bitsPerPixel == 16 ? 6 : 8, //
-			bufferFormat.a, bufferFormat.depth, bufferFormat.stencil, bufferFormat.samples, false);
+				displayMode.bitsPerPixel == 16 ? 5 : 8, //
+				displayMode.bitsPerPixel == 16 ? 6 : 8, //
+				displayMode.bitsPerPixel == 16 ? 6 : 8, //
+				bufferFormat.a, bufferFormat.depth, bufferFormat.stencil, bufferFormat.samples, false);
 		boolean success = createWindow(displayMode.width, displayMode.height, fullscreen);
 		if (success && fullscreen) sizeChanged(displayMode.width, displayMode.height);
 		return success;
@@ -311,7 +366,7 @@ public class JglfwGraphics implements Graphics {
 	}
 
 	public boolean supportsExtension (String extension) {
-		return glfwExtensionSupported(extension);
+		return glfwExtensionSupported(extension) == GL_TRUE;
 	}
 
 	public void setContinuousRendering (boolean isContinuous) {

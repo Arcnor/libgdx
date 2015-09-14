@@ -20,10 +20,10 @@ import static com.badlogic.gdx.utils.SharedLibraryLoader.*;
 
 import com.badlogic.gdx.Application;
 import com.badlogic.gdx.ApplicationListener;
-import com.badlogic.gdx.Audio;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.LifecycleListener;
 import com.badlogic.gdx.Preferences;
+import com.badlogic.gdx.backends.jglfw.audio.OpenALAudio;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Clipboard;
 import com.badlogic.gdx.utils.GdxNativesLoader;
@@ -47,6 +47,7 @@ import static org.lwjgl.opengl.GL11.*;
  * @author mzechner
  * @author Nathan Sweet */
 public class JglfwApplication implements Application {
+	OpenALAudio audio;
 	JglfwGraphics graphics;
 	JglfwFiles files;
 	JglfwInput input;
@@ -128,6 +129,7 @@ public class JglfwApplication implements Application {
 		final Thread glThread = Thread.currentThread();
 
 		GdxNativesLoader.load();
+		JglfwNativesLoader.load(!JglfwApplicationConfiguration.disableAudio);
 
 		if (glfwInit() != GL_TRUE) throw new GdxRuntimeException("Unable to initialize GLFW.");
 
@@ -136,6 +138,19 @@ public class JglfwApplication implements Application {
 		Gdx.files = files = new JglfwFiles();
 		Gdx.input = input = new JglfwInput(this);
 		Gdx.net = net = new JglfwNet();
+		if (!JglfwApplicationConfiguration.disableAudio) {
+			try {
+				audio = new OpenALAudio(
+						config.audioDeviceSimultaneousSources,
+						config.audioDeviceBufferCount,
+						config.audioDeviceBufferSize
+				);
+			} catch (Throwable t) {
+				log("JglfwApplication", "Couldn't initialize audio, disabling audio", t);
+				JglfwApplicationConfiguration.disableAudio = true;
+			}
+		}
+		Gdx.audio = audio;
 
 		glfwSetWindowSizeCallback(graphics.window, windowSizeCallback = new GLFWWindowSizeCallback() {
 			@Override
@@ -223,6 +238,9 @@ public class JglfwApplication implements Application {
 		if (!running) return;
 
 		input.update();
+		if (audio != null) {
+			audio.update();
+		}
 		shouldRender |= graphics.shouldRender();
 
 		long frameStartTime = System.nanoTime();
@@ -285,6 +303,9 @@ public class JglfwApplication implements Application {
 		}
 		listener.pause();
 		listener.dispose();
+		if (audio != null) {
+			audio.dispose();
+		}
 		releaseAllCallbacks(graphics.window);
 		glfwTerminate();
 		if (forceExit) System.exit(-1);
@@ -298,8 +319,8 @@ public class JglfwApplication implements Application {
 		return graphics;
 	}
 
-	public Audio getAudio () {
-		return null;
+	public OpenALAudio getAudio () {
+		return audio;
 	}
 
 	public JglfwInput getInput () {

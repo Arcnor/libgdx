@@ -16,11 +16,16 @@
 
 package com.badlogic.gdx.backends.jglfw;
 
+import com.badlogic.gdx.Application;
 import com.badlogic.gdx.Graphics.DisplayMode;
 import com.badlogic.gdx.graphics.Color;
 
 /** @author Nathan Sweet */
 public class JglfwApplicationConfiguration {
+	/** If true, OpenAL will not be used. This means {@link Application#getAudio()} returns null and the gdx-openal.jar and OpenAL
+	 * natives are not needed. */
+	public static boolean disableAudio;
+
 	/** Title of application window. **/
 	public String title = "";
 	/** Initial width of the application window. **/
@@ -65,6 +70,13 @@ public class JglfwApplicationConfiguration {
 	public String preferencesLocation = ".prefs/";
 	/** whether to attempt use OpenGL ES 3.0. **/
 	public boolean useGL30 = false;
+
+	/** the maximum number of sources that can be played simultaneously */
+	public int audioDeviceSimultaneousSources = 16;
+	/** the audio device buffer size in samples **/
+	public int audioDeviceBufferSize = 512;
+	/** the audio device buffer count **/
+	public int audioDeviceBufferCount = 9;
 
 	static public DisplayMode[] getDisplayModes () {
 		// FIXME

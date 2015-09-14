@@ -804,25 +804,25 @@ public class JglfwGL20 implements com.badlogic.gdx.graphics.GL20 {
 			GL20.glVertexAttribPointer(indx, size, type, normalized, stride, (ByteBuffer)buffer);
 		} else if (buffer instanceof IntBuffer) {
 			if (type == GL_INT)
-				GL20.glVertexAttribPointer(indx, size, normalized, stride, (IntBuffer)buffer);
+				GL20.glVertexAttribPointer(indx, size, type, normalized, stride, (IntBuffer)buffer);
+			else
+				throw new GdxRuntimeException("Can't use " + buffer.getClass().getName() + " with type " + type
+						+ " with this method.");
+		} else if (buffer instanceof ShortBuffer) {
+			if (type == GL_SHORT)
+				GL20.glVertexAttribPointer(indx, size, type, normalized, stride, (ShortBuffer)buffer);
 			else
 				throw new GdxRuntimeException("Can't use " + buffer.getClass().getName() + " with type " + type
 						+ " with this method.");
 		} else if (buffer instanceof FloatBuffer) {
 			if (type == GL_FLOAT)
-				GL20.glVertexAttribPointer(indx, size, normalized, stride, (FloatBuffer)buffer);
-			else
-				throw new GdxRuntimeException("Can't use " + buffer.getClass().getName() + " with type " + type
-						+ " with this method.");
-		} else if (buffer instanceof DoubleBuffer) {
-			if (type == GL_FLOAT)
-				GL20.glVertexAttribPointer(indx, size, normalized, stride, (DoubleBuffer)buffer);
+				GL20.glVertexAttribPointer(indx, size, type, normalized, stride, (FloatBuffer)buffer);
 			else
 				throw new GdxRuntimeException("Can't use " + buffer.getClass().getName() + " with type " + type
 						+ " with this method.");
 		} else
 			throw new GdxRuntimeException("Can't use " + buffer.getClass().getName()
-					+ " with this method. Use ByteBuffer instead. Blame LWJGL");
+					+ " with this method. Use ByteBuffer, ShortBuffer, IntBuffer or FloatBuffer instead. Blame LWJGL");
 	}
 
 	public void glVertexAttribPointer (int indx, int size, int type, boolean normalized, int stride, int ptr) {

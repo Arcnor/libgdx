@@ -29,8 +29,8 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFWvidmode;
+import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GLContext;
 
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
@@ -98,7 +98,7 @@ public class JglfwGraphics implements Graphics {
 					+ config.fullscreen);
 		}
 
-		GLContext.createFromCurrent();
+		GL.createCapabilities();
 
 		// Create GL.
 		String version = GL11.glGetString(GL20.GL_VERSION);
